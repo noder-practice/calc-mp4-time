@@ -21,6 +21,7 @@ function getTime(buffer) {
   const timeScale = buffer.readUInt32BE(start)
   const duration = buffer.readUInt32BE(start + 4)
   const movieLength = Math.floor(duration / timeScale)
+
   return movieLength
 }
 
@@ -50,18 +51,53 @@ function getLocaleTime(seconds) {
     })
 }
 
-;(async () => {
-  const filePath = path.resolve(__dirname, './video/v1.mp4')
+const resolveVideoPath = filename => path.resolve(__dirname, `./video/${filename}`)
+
+const readFileBuffer = async (filePath) => {
   const fd = await open(filePath, 'r')
-  
+
   // http://nodejs.cn/api/fs.html#fs_fs_read_fd_buffer_offset_length_position_callback
   const { buffer } = await read(fd, Buffer.alloc(100), 0, 100, 0)
 
-  const time = getTime(buffer)
-  
-  const res = {
-    '视频时长': getLocaleTime(time)
-  }
+  return buffer
+}
 
-  console.log(res);
+const flow = (fns) => (filename) => fns.reduce(async (res, next) => {
+  try {
+    // 因为这里的 cb 为 async fn 所以每次返回的结果除了第一次的初始值 都是Promise 需要等待一下
+    return next(await res)
+  } catch (error) {
+    console.log(error);
+  }
+}, filename)
+
+
+
+const getVideoTimeFn = flow([
+  resolveVideoPath,
+  readFileBuffer,
+  getTime,
+  getLocaleTime
+])
+
+const formatTime = ({ file, time }) => ({
+  "file": file,
+  "视频时长": time
+})
+
+const readAllVideoTime = async () => {
+  const videoFilenameList = fs.readdirSync(path.resolve(__dirname, './video')).filter(filename => filename.endsWith('.mp4')) // TODO 扩展性格
+  
+  const videoTimes = await Promise.all(videoFilenameList.map(filename => getVideoTimeFn(filename)))
+
+  return videoFilenameList.map((_, i) => formatTime({
+    file: videoFilenameList[i],
+    time: videoTimes[i],
+  }))
+}
+
+;(async () => {
+  const allVideoTimes = await readAllVideoTime()
+
+  console.log(allVideoTimes);
 })()
